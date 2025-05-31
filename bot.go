@@ -4,6 +4,10 @@ import (
 	"fmt"
 
 	"github.com/bwmarrin/discordgo"
+
+	"os"
+
+	"github.com/joho/godotenv"
 )
 
 type discordBot struct {
@@ -11,15 +15,18 @@ type discordBot struct {
 	Session discordgo.Session
 }
 
-func createBot(token string) (discordBot, error) {
+func initbot() (discordBot, error) {
 
-	dg, err := discordgo.New("Bot " + token)
+	token, err := getToken()
 
-	err = dg.Open()
 	if err != nil {
 		fmt.Println("Ошибка:", err)
 		return discordBot{}, err
 	}
+
+	dg, err := discordgo.New("Bot " + token)
+
+	err = dg.Open()
 
 	bot := discordBot{
 		Token:   token,
@@ -27,6 +34,15 @@ func createBot(token string) (discordBot, error) {
 	}
 
 	return bot, nil
+}
+
+func getToken() (string, error) {
+	err := godotenv.Load()
+
+	if err != nil {
+		return "", err
+	}
+	return os.Getenv("DISCORD_BOT_TOKEN"), nil
 }
 
 func (d discordBot) messageCode(userID string, code string) error {

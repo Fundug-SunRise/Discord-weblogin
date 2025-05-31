@@ -14,13 +14,13 @@ type PageData struct {
 }
 
 var (
-	bot, _ = createBot("")
-	ver    = true
-	code   string
+	bot, _     = initbot()
+	usersCodes = make(map[string]string)
 )
 
 func main() {
 	handler()
+
 }
 
 func handler() {
@@ -35,7 +35,7 @@ func handler() {
 
 func loginHandler(w http.ResponseWriter, r *http.Request) {
 
-	t, err := template.ParseFiles("discord_code.html", "header.html", "discord_login.html")
+	t, err := template.ParseFiles("template/discord_code.html", "template/header.html", "template/discord_login.html")
 
 	if err != nil {
 		return
@@ -51,38 +51,6 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "Метод не поддерживается", http.StatusMethodNotAllowed)
 	}
-
-	/*
-		if r.Method == http.MethodGet {
-			data := PageData{}
-			tmpl.Execute(w, data)
-			return
-		}
-
-		if r.Method == http.MethodPost {
-			err := r.ParseForm()
-			if err != nil {
-				http.Error(w, "Ошибка обработки формы", http.StatusBadRequest)
-				return
-			}
-
-			username := r.FormValue("username")
-			password := r.FormValue("password")
-
-			storedPassword, ok := users[username]
-
-			if !ok || storedPassword != password {
-				data := PageData{
-					Error: "Неверное имя пользователя или пароль",
-				}
-				tmpl.Execute(w, data)
-				return
-			}
-
-			w.Write([]byte("Добро пожаловать, " + username + "!"))
-			return
-		}
-	*/
 }
 
 func discordLGET(w http.ResponseWriter, r *http.Request, t *template.Template, step string, err string) {
@@ -100,33 +68,58 @@ func discordLPOST(w http.ResponseWriter, r *http.Request, t *template.Template) 
 		return
 	}
 
-	if ver == true {
-		ver = false
-		code = randomString(6)
-	}
-
 	source := r.FormValue("form_source")
 	switch source {
 	case "discord_form":
 
 		userID := r.FormValue("discord_id")
+		usersCodes[userID] = randomString(6)
 
-		err = bot.messageCode(userID, code)
+		err = bot.messageCode(userID, usersCodes[userID])
 		if err != nil {
 			discordLGET(w, r, t, "discord", err.Error())
 			return
 		}
 
+		cookie := &http.Cookie{
+			Name:     "discord_id",
+			Value:    userID,
+			Path:     "/",
+			MaxAge:   3600,
+			HttpOnly: true,
+			Secure:   true,
+			SameSite: http.SameSiteLaxMode,
+		}
+
+		http.SetCookie(w, cookie)
+
 		discordLGET(w, r, t, "code", "")
 
 	case "code_form":
-		codeN := r.FormValue("verification_code")
 
-		if codeN != code {
+		cookie, err := r.Cookie("discord_id")
+		if err != nil {
+			discordLGET(w, r, t, "code", "Кука не найдена!")
+			return
+		}
+
+		userID := cookie.Value
+
+		codeN := r.FormValue("verification_code")
+		fmt.Println("Проверка кода для:", userID, "Введенный код:", codeN, "Ожидаемый код:", usersCodes[userID])
+
+		if codeN != usersCodes[userID] {
 			discordLGET(w, r, t, "code", "Код не совпадает")
 			return
 		}
-		ver = true
+		delete(usersCodes, userID)
+		cookie = &http.Cookie{
+			Name:   "discord_id",
+			Value:  "",
+			Path:   "/",
+			MaxAge: -1,
+		}
+		http.SetCookie(w, cookie)
 		fmt.Fprintf(w, "Верификация пройдена")
 
 	default:
